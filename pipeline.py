@@ -62,9 +62,9 @@ DATA_DIR     = os.path.join("data", "processed")
 FEATURES_DIR = "features"
 
 # File paths
-IMAGE_CSV  = os.path.join(DATA_DIR,     "/home/school/ML_ALU/alu-machine_learning/formatives/data_preprocessing/models/data/processed/image_features.csv")
-AUDIO_CSV  = os.path.join(FEATURES_DIR, "/home/school/ML_ALU/alu-machine_learning/formatives/data_preprocessing/features/audio_features.csv")
-MERGED_CSV = os.path.join(DATA_DIR,     "/home/school/ML_ALU/alu-machine_learning/formatives/data_preprocessing/models/data/processed/merged_dataset.csv")
+IMAGE_CSV  = "models/data/processed/image_features.csv"
+AUDIO_CSV  = "features/audio_features.csv"
+MERGED_CSV = "models/data/processed/merged_dataset.csv"
 
 # Member → Customer ID mapping
 # Each team member is assigned a real customer ID from the merged dataset.
@@ -111,10 +111,10 @@ CYAN   = "\033[96m"
 BOLD   = "\033[1m"
 RESET  = "\033[0m"
 
-def ok(msg):    print(f"  {GREEN}✅  {msg}{RESET}")
-def fail(msg):  print(f"  {RED}❌  {msg}{RESET}")
-def info(msg):  print(f"  {CYAN}ℹ   {msg}{RESET}")
-def warn(msg):  print(f"  {YELLOW}⚠   {msg}{RESET}")
+def ok(msg):    print(f"  {GREEN} {msg}{RESET}")
+def fail(msg):  print(f"  {RED}  {msg}{RESET}")
+def info(msg):  print(f"  {CYAN}   {msg}{RESET}")
+def warn(msg):  print(f"  {YELLOW}   {msg}{RESET}")
 def header(msg):
     bar = "═" * 62
     print(f"\n{BOLD}{bar}")
@@ -126,12 +126,12 @@ def stage(num, name):
 
 def denied():
     print(f"\n  {RED}{BOLD}{'─'*50}")
-    print(f"  🔒  ACCESS DENIED")
+    print(f"    ACCESS DENIED")
     print(f"  {'─'*50}{RESET}\n")
 
 def approved(member, customer_id, product):
     print(f"\n  {GREEN}{BOLD}{'─'*50}")
-    print(f"  🎉  AUTHENTICATION SUCCESSFUL")
+    print(f"  AUTHENTICATION SUCCESSFUL")
     print(f"  {'─'*50}{RESET}")
     print(f"  {BOLD}Welcome, {member}!  (Customer ID: {customer_id}){RESET}")
     print(f"  Recommended product category: {BOLD}{CYAN}{product}{RESET}\n")
@@ -407,14 +407,14 @@ def sim_unauthorized(face_member, voice_member, models, data):
 
 def sim_all_authorized(models, data):
     """Run all 4 members as authorized users."""
-    print(f"\n{BOLD}{'▓'*62}")
+    print(f"\n{BOLD}")
     print(f"  SIMULATION — ALL AUTHORIZED USERS  ({len(ALL_MEMBERS)} members)")
-    print(f"{'▓'*62}{RESET}")
+    print(f"{RESET}")
     results = {}
     for member in ALL_MEMBERS:
         result = run_pipeline(member, member, models, data,
                               label=f"Authorized — {member}")
-        results[member] = "✅ APPROVED" if result else "❌ DENIED"
+        results[member] = " APPROVED" if result else " DENIED"
     _print_summary_table(results, "All Authorized Users")
 
 def sim_all_unauthorized(models, data):
@@ -425,23 +425,23 @@ def sim_all_unauthorized(models, data):
         ("Member_3", "Member_1", "Member_3 (Michael) face + Member_1 (David) voice"),
         ("Member_4", "Member_2", "Member_4 (Samuel) face  + Member_2 (Kelvin) voice"),
     ]
-    print(f"\n{BOLD}{'▓'*62}")
+    print(f"\n{BOLD}")
     print(f"  SIMULATION — UNAUTHORIZED ATTEMPTS  ({len(scenarios)} scenarios)")
-    print(f"{'▓'*62}{RESET}")
+    print(f"{RESET}")
     results = {}
     for face, voice, label in scenarios:
         result = run_pipeline(face, voice, models, data,
                               label=f"UNAUTHORIZED — {label}")
-        results[label] = "✅ APPROVED" if result else "❌ DENIED (correct)"
+        results[label] = " APPROVED" if result else " DENIED (correct)"
 
     _print_summary_table(results, "Unauthorized Attempts")
 
 def sim_full_demo(models, data):
     """Run the complete demo: all authorized + unauthorized scenarios."""
-    print(f"\n{BOLD}{CYAN}{'█'*62}")
+    print(f"\n{BOLD}{CYAN}")
     print(f"  FULL SYSTEM DEMONSTRATION")
     print(f"  Multimodal Authentication & Product Recommendation")
-    print(f"{'█'*62}{RESET}")
+    print(f"{RESET}")
 
     print(f"\n{BOLD}  PART 1 — AUTHORIZED USERS{RESET}")
     print(f"  Each member uses their own face AND their own voice")
@@ -471,26 +471,18 @@ def _print_system_summary(models, data):
     print(f"{'═'*62}{RESET}")
     print(f"""
   Models loaded from: {MODELS_DIR}/
-  ┌─────────────────────────────────────────────────────┐
-  │  Model                   Algorithm    Features       │
-  │  ─────────────────────── ────────── ───────────────  │
-  │  Facial Recognition      Rnd Forest  {len(face_cols)} image cols  │
-  │  Voiceprint Verification Rnd Forest  {len(audio_cols)} audio cols  │
-  │  Product Recommendation  Rnd Forest  13 tabular cols │
-  └─────────────────────────────────────────────────────┘
+ 
+    Model                   Algorithm    Features       
+    ─────────────────────── ────────── ───────────────  
+    Facial Recognition      Rnd Forest  {len(face_cols)} image cols  
+    Voiceprint Verification Rnd Forest  {len(audio_cols)} audio cols  
+    Product Recommendation  Rnd Forest  13 tabular cols 
+
 
   Member → Customer ID mapping:""")
     for folder, cid in MEMBER_TO_CUSTOMER_ID.items():
         real = FOLDER_TO_REAL_NAME.get(folder, folder)
         print(f"    {folder} ({real:<15}) → {cid}")
-    print(f"""
-  Audio features source  : {audio_source.upper()}
-  Face confidence gate   : {FACE_CONFIDENCE_THRESHOLD:.0%}
-
-  Pipeline order (per assignment diagram):
-    Face Recognition → Product Recommendation → Voice Verification
-{'═'*62}
-""")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CLI ENTRY POINT
@@ -552,8 +544,8 @@ def main():
 
     # Startup banner
     print(f"\n{BOLD}{CYAN}{'═'*62}")
-    print(f"  🔐  Multimodal Authentication System")
-    print(f"  📦  Pipeline v1.0  |  Task 6 — System Demonstration")
+    print(f"    Multimodal Authentication System")
+    print(f"    Pipeline v1.0  |  Task 6 — System Demonstration")
     print(f"{'═'*62}{RESET}")
 
     # Load models and data
