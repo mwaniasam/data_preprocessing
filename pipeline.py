@@ -1,0 +1,263 @@
+"""
+pipeline.py — Multimodal Authentication & Product Recommendation CLI
+Group: Data Preprocessing Team
+
+Usage
+-----
+Run a single authorized user:
+    python pipeline.py --mode authorized --member Kelvin
+
+Run all authorized users:
+    python pipeline.py --mode all
+
+Run an unauthorized attempt (face/voice mismatch):
+    python pipeline.py --mode unauthorized --face Kelvin --voice Samuel
+
+Run all simulations at once (full demo):
+    python pipeline.py --mode demo
+
+Show help:
+    python pipeline.py --help
+
+Pipeline Flow (matches assignment diagram)
+------------------------------------------
+  User Input
+      ↓
+  [STAGE 1] Face Recognition       → FAIL → Access Denied
+      ↓ PASS
+  [STAGE 2] Product Recommendation (computed, held until voice passes)
+      ↓
+  [STAGE 3] Voice Verification     → FAIL → Access Denied
+      ↓ PASS
+  Display: Welcome + Recommended Product
+
+Requirements
+------------
+    pip install numpy pandas scikit-learn joblib
+"""
+
+import argparse
+import os
+import sys
+import time
+import warnings
+
+import joblib
+import numpy as np
+import pandas as pd
+
+warnings.filterwarnings("ignore")
+
+# Directory where .pkl model files are saved (Task 4 output)
+MODELS_DIR = "saved_models"
+
+# Directory where processed data CSVs live (Task 1 + Task 2 + Task 3 output)
+DATA_DIR     = os.path.join("data", "processed")
+FEATURES_DIR = "features"
+
+# File paths
+IMAGE_CSV  = os.path.join(DATA_DIR,     "image_features.csv")
+AUDIO_CSV  = os.path.join(FEATURES_DIR, "audio_features.csv")
+MERGED_CSV = os.path.join(DATA_DIR,     "merged_dataset.csv")
+
+# Member → Customer ID mapping
+# Each team member is assigned a real customer ID from the merged dataset.
+# This is the bridge between biometric identity and purchase history.
+MEMBER_TO_CUSTOMER_ID = {
+    "David"         : "A192",
+    "Kelvin"        : "A190",
+    "Michael Kimani": "A150",
+    "Samuel"        : "A103",
+}
+
+ALL_MEMBERS = list(MEMBER_TO_CUSTOMER_ID.keys())
+
+# Face confidence threshold — below this we reject as unknown
+FACE_CONFIDENCE_THRESHOLD = 0.50
+
+# DISPLAY HELPERS
+
+GREEN  = "\033[92m"
+RED    = "\033[91m"
+YELLOW = "\033[93m"
+CYAN   = "\033[96m"
+BOLD   = "\033[1m"
+RESET  = "\033[0m"
+
+def ok(msg):    print(f"  {GREEN}  {msg}{RESET}")
+def fail(msg):  print(f"  {RED} {msg}{RESET}")
+def info(msg):  print(f"  {CYAN}  {msg}{RESET}")
+def warn(msg):  print(f"  {YELLOW}  {msg}{RESET}")
+def header(msg):
+    bar = "═" * 62
+    print(f"\n{BOLD}{bar}")
+    print(f"  {msg}")
+    print(f"{bar}{RESET}")
+def stage(num, name):
+    print(f"\n{BOLD}  [STAGE {num}]  {name}{RESET}")
+    print(f"  {'─' * 50}")
+
+def denied():
+    print(f"\n  {RED}{BOLD}{'─'*50}")
+    print(f"  🔒  ACCESS DENIED")
+    print(f"  {'─'*50}{RESET}\n")
+
+def approved(member, customer_id, product):
+    print(f"\n  {GREEN}{BOLD}{'─'*50}")
+    print(f"  🎉  AUTHENTICATION SUCCESSFUL")
+    print(f"  {'─'*50}{RESET}")
+    print(f"  {BOLD}Welcome, {member}!  (Customer ID: {customer_id}){RESET}")
+    print(f"  Recommended product category: {BOLD}{CYAN}{product}{RESET}\n")
+
+
+def load_models():
+    """Load all three trained models and their supporting objects."""
+    required = [
+        "facial_recognition_model.pkl",
+        "face_label_encoder.pkl",
+        "voiceprint_model.pkl",
+        "voice_label_encoder.pkl",
+        "audio_scaler.pkl",
+        "product_recommendation_model.pkl",
+        "product_label_encoder.pkl",
+        "product_feature_columns.pkl",
+    ]
+    missing = [f for f in required if not os.path.exists(os.path.join(MODELS_DIR, f))]
+    if missing:
+        print(f"{RED}ERROR: Missing model files in '{MODELS_DIR}/':{RESET}")
+        for m in missing:
+            print(f"  • {m}")
+        print(f"\n{YELLOW}Run task_4_model_creation.ipynb first to generate the saved_models/ folder.{RESET}\n")
+        sys.exit(1)
+
+    models = {
+        "face_model"   : joblib.load(os.path.join(MODELS_DIR, "facial_recognition_model.pkl")),
+        "face_enc"     : joblib.load(os.path.join(MODELS_DIR, "face_label_encoder.pkl")),
+        "voice_model"  : joblib.load(os.path.join(MODELS_DIR, "voiceprint_model.pkl")),
+        "voice_enc"    : joblib.load(os.path.join(MODELS_DIR, "voice_label_encoder.pkl")),
+        "audio_scaler" : joblib.load(os.path.join(MODELS_DIR, "audio_scaler.pkl")),
+        "prod_model"   : joblib.load(os.path.join(MODELS_DIR, "product_recommendation_model.pkl")),
+        "prod_enc"     : joblib.load(os.path.join(MODELS_DIR, "product_label_encoder.pkl")),
+        "prod_cols"    : joblib.load(os.path.join(MODELS_DIR, "product_feature_columns.pkl")),
+    }
+    return models
+
+# DATA LOADER
+
+def load_data():
+    """Load feature datasets. Falls back to synthetic audio if CSV not found."""
+
+    # Image features (Task 2)
+    if not os.path.exists(IMAGE_CSV):
+        print(f"{RED}ERROR: {IMAGE_CSV} not found. Run Task 2 notebook first.{RESET}")
+        sys.exit(1)
+    image_df = pd.read_csv(IMAGE_CSV)
+
+    # Merged dataset (Task 1)
+    if not os.path.exists(MERGED_CSV):
+        print(f"{RED}ERROR: {MERGED_CSV} not found. Run Task 1 notebook first.{RESET}")
+        sys.exit(1)
+    merged_df = pd.read_csv(MERGED_CSV)
+    bool_cols = merged_df.select_dtypes(include="bool").columns
+    merged_df[bool_cols] = merged_df[bool_cols].astype(int)
+
+    # Audio features (Task 3) — use real file if available, else synthetic
+    if os.path.exists(AUDIO_CSV):
+        audio_df = pd.read_csv(AUDIO_CSV)
+        audio_source = "real"
+    else:
+        warn(f"audio_features.csv not found in {FEATURES_DIR}/")
+        warn("Using synthetic audio features. Place audio_features.csv in features/ for real data.")
+        audio_df = _synthetic_audio()
+        audio_source = "synthetic"
+
+    # Feature column sets
+    face_feature_cols  = [c for c in image_df.columns
+                          if c not in ["member", "expression", "augmentation"]]
+    audio_feature_cols = [c for c in audio_df.columns
+                          if c not in ["member", "phrase_label", "sample_type", "file_name"]]
+
+    return image_df, audio_df, merged_df, face_feature_cols, audio_feature_cols, audio_source
+
+
+def _synthetic_audio():
+    """Generate reproducible synthetic audio features for demo purposes."""
+    AUDIO_COLS = [f"mfcc_{i}" for i in range(1, 14)] + ["spectral_rolloff", "rms_energy", "zcr"]
+    np.random.seed(42)
+    member_centers = {m: np.random.randn(len(AUDIO_COLS)) * 10 for m in ALL_MEMBERS}
+    rows = []
+    for member in ALL_MEMBERS:
+        center = member_centers[member]
+        for phrase in ["yes_approve", "confirm_transaction"]:
+            for stype in ["original", "augmented"]:
+                noise = np.random.randn(len(AUDIO_COLS)) * 0.5
+                row = {"member": member, "phrase_label": phrase,
+                       "sample_type": stype, "file_name": f"{member}_{phrase}_{stype}.wav"}
+                for j, col in enumerate(AUDIO_COLS):
+                    row[col] = center[j] + noise[j]
+                rows.append(row)
+            for k in range(4):
+                noise = np.random.randn(len(AUDIO_COLS)) * 0.5
+                row = {"member": member, "phrase_label": phrase,
+                       "sample_type": "augmented",
+                       "file_name": f"{member}_{phrase}_aug{k}.wav"}
+                for j, col in enumerate(AUDIO_COLS):
+                    row[col] = center[j] + noise[j]
+                rows.append(row)
+    return pd.DataFrame(rows)
+
+# CUSTOMER PROFILE
+
+def get_customer_profile(customer_id, merged_df):
+    """Fetch the most recent transaction row for a customer ID."""
+    subset = merged_df[merged_df["customer_id_new"] == customer_id]
+    if subset.empty:
+        return None
+    return subset.sort_values("purchase_month", ascending=False).iloc[0].to_dict()
+
+# CORE PIPELINE
+
+def run_pipeline(face_member, audio_member, models, data, label=None):
+    """
+    Run the full 3-stage authentication + recommendation pipeline.
+
+    Parameters
+    ----------
+    face_member  : str  Member whose face features to use as input
+    audio_member : str  Member whose voice features to use as input
+    models       : dict All loaded model objects
+    data         : tuple (image_df, audio_df, merged_df, face_cols, audio_cols, audio_source)
+    label        : str  Optional display label for this run
+    """
+    image_df, audio_df, merged_df, face_cols, audio_cols, _ = data
+
+    if label is None:
+        label = f"Face: {face_member}  |  Voice: {audio_member}"
+
+    header(label)
+
+    # ── STAGE 1: Face Recognition 
+    stage(1, "FACE RECOGNITION")
+    info(f"Scanning face input for: {face_member}")
+    time.sleep(0.3)
+
+    face_row   = image_df[
+        (image_df["member"] == face_member) &
+        (image_df["augmentation"] == "original")
+    ].iloc[0]
+    face_input = face_row[face_cols].values.reshape(1, -1)
+    face_pred  = models["face_model"].predict(face_input)[0]
+    face_proba = models["face_model"].predict_proba(face_input).max()
+    face_name  = models["face_enc"].inverse_transform([face_pred])[0]
+
+    print(f"  Detected   : {BOLD}{face_name}{RESET}")
+    print(f"  Confidence : {face_proba:.1%}")
+
+    if face_proba < FACE_CONFIDENCE_THRESHOLD:
+        fail(f"Confidence {face_proba:.1%} below threshold ({FACE_CONFIDENCE_THRESHOLD:.0%}).")
+        fail("Face does not match any registered member.")
+        denied()
+        return False
+
+    ok("Face recognized. Proceeding to product recommendation...")
+
