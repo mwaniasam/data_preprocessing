@@ -261,3 +261,57 @@ def run_pipeline(face_member, audio_member, models, data, label=None):
 
     ok("Face recognized. Proceeding to product recommendation...")
 
+    # ── STAGE 2: Product Recommendation 
+    stage(2, "PRODUCT RECOMMENDATION")
+    info(f"Looking up customer profile for: {face_name}")
+    time.sleep(0.3)
+
+    customer_id = MEMBER_TO_CUSTOMER_ID.get(face_name)
+    if customer_id is None:
+        fail(f"No customer ID mapped for member: {face_name}")
+        denied()
+        return False
+
+    profile = get_customer_profile(customer_id, merged_df)
+    if profile is None:
+        fail(f"No purchase history found for customer: {customer_id}")
+        denied()
+        return False
+
+    prod_input  = pd.DataFrame([profile])[models["prod_cols"]].values.astype(float)
+    prod_pred   = models["prod_model"].predict(prod_input)[0]
+    prod_proba  = models["prod_model"].predict_proba(prod_input).max()
+    recommended = models["prod_enc"].inverse_transform([prod_pred])[0]
+
+    print(f"  Customer ID        : {BOLD}{customer_id}{RESET}")
+    print(f"  Predicted category : {BOLD}{CYAN}{recommended}{RESET}")
+    print(f"  Confidence         : {prod_proba:.1%}")
+    ok("Recommendation ready. Proceeding to voice verification...")
+
+    # ── STAGE 3: Voice Verification 
+    stage(3, "VOICE VERIFICATION")
+    info(f"Scanning voice input for: {audio_member}")
+    time.sleep(0.3)
+
+    audio_row   = audio_df[
+        (audio_df["member"] == audio_member) &
+        (audio_df["sample_type"] == "original")
+    ].iloc[0]
+    audio_input = models["audio_scaler"].transform(
+        audio_row[audio_cols].values.reshape(1, -1)
+    )
+    voice_pred  = models["voice_model"].predict(audio_input)[0]
+    voice_proba = models["voice_model"].predict_proba(audio_input).max()
+    voice_name  = models["voice_enc"].inverse_transform([voice_pred])[0]
+
+    print(f"  Detected   : {BOLD}{voice_name}{RESET}")
+    print(f"  Confidence : {voice_proba:.1%}")
+
+    if voice_name != face_name:
+        fail(f"Voice ({voice_name}) does not match face ({face_name}).")
+        denied()
+        return False
+
+    ok("Voice verified.")
+    approved(face_name, customer_id, recommended)
+    return True
