@@ -315,3 +315,212 @@ def run_pipeline(face_member, audio_member, models, data, label=None):
     ok("Voice verified.")
     approved(face_name, customer_id, recommended)
     return True
+
+# SIMULATION MODES
+
+
+def sim_authorized(member, models, data):
+    """Run a single authorized user through the full pipeline."""
+    if member not in ALL_MEMBERS:
+        print(f"{RED}Unknown member '{member}'. Valid options: {ALL_MEMBERS}{RESET}")
+        sys.exit(1)
+    run_pipeline(member, member, models, data,
+                 label=f"AUTHORIZED USER — {member}")
+
+def sim_unauthorized(face_member, voice_member, models, data):
+    """Run an unauthorized attempt: face and voice belong to different people."""
+    if face_member not in ALL_MEMBERS:
+        print(f"{RED}Unknown face member '{face_member}'.{RESET}")
+        sys.exit(1)
+    if voice_member not in ALL_MEMBERS:
+        print(f"{RED}Unknown voice member '{voice_member}'.{RESET}")
+        sys.exit(1)
+    if face_member == voice_member:
+        print(f"{YELLOW}Warning: face and voice are the same member — this is an authorized scenario.{RESET}")
+    run_pipeline(face_member, voice_member, models, data,
+                 label=f"UNAUTHORIZED ATTEMPT — {face_member} face + {voice_member} voice")
+
+def sim_all_authorized(models, data):
+    """Run all 4 members as authorized users."""
+    print(f"\n{BOLD}{'▓'*62}")
+    print(f"  SIMULATION — ALL AUTHORIZED USERS  ({len(ALL_MEMBERS)} members)")
+    print(f"{'▓'*62}{RESET}")
+    results = {}
+    for member in ALL_MEMBERS:
+        result = run_pipeline(member, member, models, data,
+                              label=f"Authorized — {member}")
+        results[member] = " APPROVED" if result else " DENIED"
+    _print_summary_table(results, "All Authorized Users")
+
+def sim_all_unauthorized(models, data):
+    """Run multiple unauthorized mismatch scenarios."""
+    scenarios = [
+        ("Kelvin",         "Samuel",          "Kelvin face  + Samuel voice"),
+        ("David",          "Michael Kimani",  "David face   + Michael Kimani voice"),
+        ("Michael Kimani", "David",           "Michael face + David voice"),
+        ("Samuel",         "Kelvin",          "Samuel face  + Kelvin voice"),
+    ]
+    print(f"\n{BOLD}{'▓'*62}")
+    print(f"  SIMULATION — UNAUTHORIZED ATTEMPTS  ({len(scenarios)} scenarios)")
+    print(f"{'▓'*62}{RESET}")
+    results = {}
+    for face, voice, label in scenarios:
+        result = run_pipeline(face, voice, models, data,
+                              label=f"UNAUTHORIZED — {label}")
+        results[label] = " APPROVED" if result else  "DENIED (correct)"
+
+    _print_summary_table(results, "Unauthorized Attempts")
+
+def sim_full_demo(models, data):
+    """Run the complete demo: all authorized + unauthorized scenarios."""
+    print(f"\n{BOLD}{CYAN}{'█'*62}")
+    print(f"  FULL SYSTEM DEMONSTRATION")
+    print(f"  Multimodal Authentication & Product Recommendation")
+    print(f"{'█'*62}{RESET}")
+
+    print(f"\n{BOLD}  PART 1 — AUTHORIZED USERS{RESET}")
+    print(f"  Each member uses their own face AND their own voice")
+    sim_all_authorized(models, data)
+
+    print(f"\n{BOLD}  PART 2 — UNAUTHORIZED ATTEMPTS{RESET}")
+    print(f"  Attacker submits one person's face but a different voice")
+    sim_all_unauthorized(models, data)
+
+    _print_system_summary(models, data)
+
+def _print_summary_table(results, title):
+    """Print a formatted results table."""
+    print(f"\n  {'─'*50}")
+    print(f"  {BOLD}Results — {title}{RESET}")
+    print(f"  {'─'*50}")
+    for scenario, outcome in results.items():
+        color = GREEN if "APPROVED" in outcome else RED
+        print(f"  {color}{scenario:<40} {outcome}{RESET}")
+    print(f"  {'─'*50}\n")
+
+def _print_system_summary(models, data):
+    """Print the full system architecture summary."""
+    _, _, _, face_cols, audio_cols, audio_source = data
+    print(f"\n{BOLD}{'═'*62}")
+    print(f"  SYSTEM ARCHITECTURE SUMMARY")
+    print(f"{'═'*62}{RESET}")
+    print(f"""
+  Models loaded from: {MODELS_DIR}/
+  ┌─────────────────────────────────────────────────────┐
+  │  Model                   Algorithm    Features       │
+  │  ─────────────────────── ────────── ───────────────  │
+  │  Facial Recognition      Rnd Forest  {len(face_cols)} image cols  │
+  │  Voiceprint Verification Rnd Forest  {len(audio_cols)} audio cols  │
+  │  Product Recommendation  Rnd Forest  13 tabular cols │
+  └─────────────────────────────────────────────────────┘
+
+  Member → Customer ID mapping:""")
+    for member, cid in MEMBER_TO_CUSTOMER_ID.items():
+        print(f"    {member:<20} → {cid}")
+    print(f"""
+  Audio features source  : {audio_source.upper()}
+  Face confidence gate   : {FACE_CONFIDENCE_THRESHOLD:.0%}
+
+  Pipeline order (per assignment diagram):
+    Face Recognition → Product Recommendation → Voice Verification
+{'═'*62}
+""")
+
+# CLI ENTRY POINT
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        prog="pipeline.py",
+        description=(
+            "Multimodal Authentication & Product Recommendation CLI\n"
+            "Simulates face recognition → product recommendation → voice verification"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python pipeline.py --mode demo
+  python pipeline.py --mode authorized --member Kelvin
+  python pipeline.py --mode all
+  python pipeline.py --mode unauthorized --face Kelvin --voice Samuel
+  python pipeline.py --mode unauthorized --face David --voice Michael Kimani
+
+Valid members: David, Kelvin, "Michael Kimani", Samuel
+        """
+    )
+    parser.add_argument(
+        "--mode",
+        required=True,
+        choices=["demo", "authorized", "unauthorized", "all"],
+        help=(
+            "demo         : Run full demo (all authorized + unauthorized scenarios)\n"
+            "authorized   : Run one authorized user (requires --member)\n"
+            "unauthorized : Run a mismatch attack (requires --face and --voice)\n"
+            "all          : Run all 4 authorized members"
+        )
+    )
+    parser.add_argument(
+        "--member",
+        type=str,
+        default=None,
+        help="Member name for authorized mode. E.g. --member Kelvin"
+    )
+    parser.add_argument(
+        "--face",
+        type=str,
+        default=None,
+        help="Face member for unauthorized mode. E.g. --face Kelvin"
+    )
+    parser.add_argument(
+        "--voice",
+        type=str,
+        default=None,
+        help="Voice member for unauthorized mode. E.g. --voice Samuel"
+    )
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+
+    # Startup banner
+    print(f"\n{BOLD}{CYAN}{'═'*62}")
+    print(f" Multimodal Authentication System")
+    print(f" Pipeline v1.0  |  Task 6 — System Demonstration")
+    print(f"{'═'*62}{RESET}")
+
+    # Load models and data
+    print(f"\n  Loading models from {BOLD}{MODELS_DIR}/{RESET}...")
+    models = load_models()
+    print(f"  {GREEN}All models loaded.{RESET}")
+
+    print(f"  Loading feature data...")
+    data = load_data()
+    _, _, _, _, _, audio_source = data
+    if audio_source == "synthetic":
+        warn("Audio data is synthetic. Place audio_features.csv in features/ for real data.")
+    print(f"  {GREEN}Data loaded.{RESET}\n")
+
+    # Route to the right simulation
+    if args.mode == "demo":
+        sim_full_demo(models, data)
+
+    elif args.mode == "authorized":
+        if not args.member:
+            print(f"{RED}--member is required for authorized mode.{RESET}")
+            print(f"Valid members: {ALL_MEMBERS}")
+            sys.exit(1)
+        sim_authorized(args.member, models, data)
+
+    elif args.mode == "unauthorized":
+        if not args.face or not args.voice:
+            print(f"{RED}--face and --voice are both required for unauthorized mode.{RESET}")
+            print(f"Valid members: {ALL_MEMBERS}")
+            sys.exit(1)
+        sim_unauthorized(args.face, args.voice, models, data)
+
+    elif args.mode == "all":
+        sim_all_authorized(models, data)
+
+
+if __name__ == "__main__":
+    main()
