@@ -1,27 +1,24 @@
-# Byte-compiled / optimized / DLL files
-_pycache_/
+# compiled python files
+__pycache__/
 *.py[cod]
 *$py.class
 
-# Virtual environments
+# virtual environments
 .venv/
 venv/
 env/
 ENV/
 
-# Jupyter Notebook
+# jupyter checkpoints
 .ipynb_checkpoints
 /.ipynb_checkpoints/
+*/.ipynb_checkpoints/*
 
-# Data and Models
-data/
-models/
-
-# Logs
+# logs
 *.log
 nbconvert_log.txt
 
-# OS generated files
+# os junk
 .DS_Store
 .DS_Store?
 ._*
@@ -30,7 +27,7 @@ nbconvert_log.txt
 ehthumbs.db
 Thumbs.db
 
-# VS Code / IDEs
+# editor files
 .vscode/
 .idea/
 *.swp
