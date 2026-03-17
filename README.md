@@ -6,10 +6,10 @@ Multimodal authentication and product recommendation system built for our Format
 
 | Name | What they worked on |
 |------|-------------------|
-| Samuel Mwania | Task 1 — Merging the datasets and doing the EDA |
-| Kelvin Rwihimba | Task 6 — System demonstration and the pipeline script |
+| Samuel Mwania | Task 1 & 2  — Merging the datasets and doing the EDA, Image Data Collection and Feature Extraction |
 | Michael Kimani | Task 3 — Audio/sound data collection and processing |
 | David Akachi | Task 4 — Training all three models |
+| Kelvin Rwihimba | Task 6 — System demonstration and the pipeline script |
 
 ## How the pipeline works
 
